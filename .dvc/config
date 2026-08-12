@@ -1,0 +1,5 @@
+[core]
+    remote = r2remote
+['remote "r2remote"']
+    url = s3://chessmodel-dvc
+    endpointurl = https://cdf0021ed50e636de6dd4974a0a615dc.r2.cloudflarestorage.com
