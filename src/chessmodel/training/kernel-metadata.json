@@ -1,0 +1,13 @@
+{
+  "id": "macedo03/chessmodel-train",
+  "title": "ChessModel Training",
+  "code_file": "run_kaggle.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": ["macedo03/chessmodel-dataset"],
+  "competition_sources": [],
+  "kernel_sources": []
+}
