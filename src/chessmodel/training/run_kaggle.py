@@ -60,6 +60,24 @@ def resolve_kaggle_dataset_path(dataset_slug: str, dataset_filename: str) -> Pat
     return KAGGLE_INPUT / dataset_slug / dataset_filename
 
 
+def _describe_kaggle_input() -> str:
+    """Best-effort directory listing for diagnosing a missing dataset mount.
+
+    A bare FileNotFoundError from deep inside train() doesn't say whether
+    /kaggle/input itself is empty, has the dataset under a different slug, or
+    has the file under a different name -- any of which look identical from
+    the caller's side. This surfaces the actual mounted layout so a failed
+    run's log is diagnosable without needing a second run just to add prints.
+    """
+    if not KAGGLE_INPUT.exists():
+        return f"{KAGGLE_INPUT} does not exist"
+    lines = [f"{KAGGLE_INPUT} contains: {sorted(p.name for p in KAGGLE_INPUT.iterdir())}"]
+    for child in sorted(KAGGLE_INPUT.iterdir()):
+        if child.is_dir():
+            lines.append(f"  {child}/ contains: {sorted(p.name for p in child.iterdir())}")
+    return "\n".join(lines)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -85,8 +103,15 @@ def main() -> None:
     parser.add_argument("--num-residual-blocks", type=int, default=8)
     args = parser.parse_args()
 
+    dataset_path = resolve_kaggle_dataset_path(args.dataset_slug, args.dataset_filename)
+    if not dataset_path.exists():
+        raise FileNotFoundError(
+            f"Expected dataset file at {dataset_path}, but it doesn't exist.\n"
+            f"{_describe_kaggle_input()}"
+        )
+
     config = TrainingConfig(
-        dataset_path=resolve_kaggle_dataset_path(args.dataset_slug, args.dataset_filename),
+        dataset_path=dataset_path,
         checkpoint_dir=KAGGLE_WORKING / "checkpoints",
         mlflow_tracking_uri=str(KAGGLE_WORKING / "mlruns"),
         experiment_name=args.experiment_name,
