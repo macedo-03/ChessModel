@@ -56,7 +56,7 @@ def game_qualifies(
     return is_valid_time_control(headers.get("TimeControl", ""), min_time_control_seconds)
 
 
-def _read_next_game_block(stream: TextIO) -> tuple[dict[str, str], list[str]] | None:
+def read_next_game_block(stream: TextIO) -> tuple[dict[str, str], list[str]] | None:
     """Read one game's headers and raw text (headers + movetext) from stream.
 
     Pure text scanning — no chess logic, no move parsing. Returns None at EOF.
@@ -118,7 +118,7 @@ def filter_games(
         while (max_games is None or kept < max_games) and (
             max_scanned is None or scanned < max_scanned
         ):
-            block = _read_next_game_block(pgn_stream)
+            block = read_next_game_block(pgn_stream)
             if block is None:
                 break
 

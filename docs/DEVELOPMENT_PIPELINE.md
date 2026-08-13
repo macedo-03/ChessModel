@@ -54,21 +54,41 @@ decodes it losslessly. CI runs green on push.
 target) tensors built from real Lichess games.
 **Estimate:** 1.5–2 weeks · **Tech:** DVC, Cloudflare R2, python-chess
 
-- Stream-filter one month of the Lichess Elo>2100 PGN dump — decompress and filter
-  by header Elo without ever holding the full dump on disk
-- Parse games, skip variants/aborted games/missing clock data
-- Bitboard encoder per the Phase 0 ADR; policy target as an AlphaZero-style 8×8×73
-  move-plane encoding; value target = game result from the mover's perspective
+- Stream-filter one month of the Lichess PGN dump by Elo — decompress and filter
+  by header Elo without ever holding the full dump on disk. Raised to both
+  players ≥2200 (from the original ≥2100 target) after real-data testing
+  showed ≥2100's hit rate would take ~14 hours to reach a useful sample; ≥2200
+  cut that to ~11 minutes
+- Parse games, skip bullet-speed games (time control <180s); variants are
+  excluded by construction, since the "standard" dump contains none
+- Bitboard encoder per the Phase 0 ADR (ADR-0001); policy target as an
+  AlphaZero-style 8×8×73 move-plane encoding (ADR-0003); value target = game
+  result from the mover's perspective (ADR-0002 fix — the prior attempt's
+  concrete bug)
 - Split by *game*, not position, to avoid leakage — chronological split so later
   drift evaluation is realistic
-- Persist as memory-mapped shards for fast PyTorch loading
-- `dvc init`, R2 remote, `dvc.yaml` stages: download → parse → encode → split
+- Encode positions on the fly at training time rather than persisting expanded
+  tensors to disk — superseded the original "memory-mapped shards" plan once
+  the math was run: expanded tensors would cost ~93x the filtered PGN's size
+  (~53GB vs. 572MB for this dataset), blowing well past the R2 free tier for
+  no benefit, since the CPU cost of encoding is trivial next to the GPU time
+  training actually spends per batch (see ADR-0002)
+- `dvc init`, R2 remote, `dvc.yaml`'s `ingest` stage (download → filter → write
+  the filtered PGN). Encoding and the train/val split turned out to be runtime
+  operations with no file output, given the on-the-fly design above — not
+  separate pipeline stages, unlike the four originally scoped
+- Generate a dataset card (size, Elo/date range, result distribution) alongside
+  the filtered PGN — see
+  [`docs/datasets/`](../docs/datasets/) for the one this phase produced
 
-**Exit criteria:** `dvc repro` regenerates byte-identical processed shards from raw
-PGN. A dataset card documents size, Elo distribution, date range.
+**Exit criteria:** `dvc repro` regenerates the byte-identical filtered PGN from
+the raw monthly dump. A dataset card documents size, Elo distribution, date
+range.
 
 **Risk:** monthly dumps run 100GB+. Filter while streaming — never download
-uncompressed in full.
+uncompressed in full. Also: a strict Elo filter can exhaust the games-per-cycle
+cap within days rather than spanning the full month it's nominally drawn from —
+worth checking the resulting dataset card's date range, not assuming it.
 
 ---
 
@@ -167,6 +187,14 @@ resolves every draw condition correctly.
 
 - Prefect flows wrapping Phase 1/2 as tasks: data-refresh flow, training flow,
   triggered by a new DVC dataset version or a schedule
+- Make `dvc.yaml`'s `ingest` stage's `month` dynamic (computed at runtime, e.g.
+  "last fully-completed month") instead of the hardcoded literal it is as of
+  Phase 01 — a prerequisite for scheduling, not just an enhancement: as
+  written, a scheduled `dvc repro` would keep re-fetching the same month
+  forever and never pick up new data
+- Scheduled `dvc repro && dvc push` (GitHub Actions cron or a Prefect
+  deployment), committing the updated `dvc.lock` back to git so the new
+  dataset version is actually discoverable, not just sitting in R2 unrecorded
 - GitHub Actions: lint/test on PR, build + push the Docker image on merge, trigger
   the Prefect deployment
 - Wire MLflow Registry stages (None → Staging → Production) to a promotion step —

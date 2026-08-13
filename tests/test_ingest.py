@@ -9,11 +9,11 @@ import io
 import chess.pgn
 
 from chessmodel.data.ingest import (
-    _read_next_game_block,
     build_dump_url,
     filter_games,
     game_qualifies,
     is_valid_time_control,
+    read_next_game_block,
 )
 
 SYNTHETIC_PGN = """\
@@ -113,16 +113,16 @@ FIRST_GAME_BLOCK = (
 def test_read_next_game_block_parses_headers_and_returns_none_at_eof() -> None:
     stream = io.StringIO(SYNTHETIC_PGN)
 
-    headers, lines = _read_next_game_block(stream)
+    headers, lines = read_next_game_block(stream)
     assert headers["White"] == "PlayerA"
     assert headers["WhiteElo"] == "2600"
     assert "".join(lines) == FIRST_GAME_BLOCK
 
     # Consume the remaining three games...
     for _ in range(3):
-        assert _read_next_game_block(stream) is not None
+        assert read_next_game_block(stream) is not None
     # ...and EOF is reported cleanly.
-    assert _read_next_game_block(stream) is None
+    assert read_next_game_block(stream) is None
 
 
 def test_filter_games_output_is_byte_identical_for_kept_games() -> None:
