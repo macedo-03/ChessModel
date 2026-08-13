@@ -1,0 +1,13 @@
+stages:
+  ingest:
+    cmd: >-
+      uv run python -m chessmodel.data.ingest
+      --month 2026-07
+      --min-elo 2200
+      --min-time-control 180
+      --max-games 200000
+      --output data/raw/lichess_2026-07_elo2200.pgn
+    deps:
+      - src/chessmodel/data/ingest.py
+    outs:
+      - data/raw/lichess_2026-07_elo2200.pgn

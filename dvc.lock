@@ -1,0 +1,16 @@
+schema: '2.0'
+stages:
+  ingest:
+    cmd: uv run python -m chessmodel.data.ingest --month 2026-07 --min-elo 2200
+      --min-time-control 180 --max-games 200000 --output
+      data/raw/lichess_2026-07_elo2200.pgn
+    deps:
+    - path: src/chessmodel/data/ingest.py
+      hash: md5
+      md5: 61d02618deeb6b16899d413179a80371
+      size: 6569
+    outs:
+    - path: data/raw/lichess_2026-07_elo2200.pgn
+      hash: md5
+      md5: 8c8e67d93de33c731284eda4878ee8f5
+      size: 600015314
