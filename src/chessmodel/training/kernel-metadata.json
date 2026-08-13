@@ -1,5 +1,5 @@
 {
-  "id": "macedo03/chessmodel-train",
+  "id": "macedo03/chessmodel-training",
   "title": "ChessModel Training",
   "code_file": "run_kaggle.py",
   "language": "python",
