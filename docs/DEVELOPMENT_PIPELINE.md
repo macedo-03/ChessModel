@@ -144,12 +144,18 @@ sample position in under 100ms on CPU.
 ## 04 · Model export & serving — *(MVP path)*
 
 **Goal:** a containerized inference API a bot — or anything else — can actually call.
-**Estimate:** 1–1.5 weeks · **Tech:** ONNX Runtime, FastAPI, Docker
+**Estimate:** 1–1.5 weeks · **Tech:** FastAPI, Docker
 
-- Export best checkpoint to ONNX; verify numeric parity against PyTorch on a
-  validation batch
+- Serve directly from the registered PyTorch checkpoint, CPU baseline with optional
+  CUDA — no ONNX export. A single-position forward pass at this model's scale should
+  comfortably clear any chess time-control budget in eager mode; benchmark real
+  latency once the API exists and only add an ONNX export path later if that
+  measurement says otherwise. Most likely to actually need it is the optional
+  Search-augmented tier's MCTS (many evaluations per move), not plain policy-argmax
+  play
 - FastAPI: `/move` (FEN in → move + eval + explanation out), `/health`, `/model-info`
-- ONNX Runtime session, CPU baseline with optional CUDA provider
+- Keep the loaded PyTorch model addressable for Phase 3's `explain()` once it exists —
+  `/move`'s explanation field stays optional/null until then
 - Multi-stage Dockerfile, docker-compose for local dev (api + redis)
 - Integration tests: boot the container, hit the endpoints, assert schema + latency
   budget in CI
@@ -217,8 +223,8 @@ continuous-learning loop.
   levels, over a fixed opening suite to reduce variance
 - Wald's SPRT (elo0/elo1 bounds e.g. 0/+20, α/β = 0.05), stopping early on a
   decisive result to conserve compute
-- On a pass: promote in the MLflow Registry, re-export ONNX, rebuild the serving
-  image
+- On a pass: promote in the MLflow Registry, rebuild the serving image with the
+  new checkpoint
 - Self-play generation capped per cycle (e.g. 500–2,000 games), light MCTS or
   temperature-sampled policy only
 - Mix self-play data back into training at a controlled ratio (10–20%) alongside
@@ -338,7 +344,7 @@ Phases 04/05 (the bot needs to be up when your machine isn't).
 | Self-play + SPRT arena compute | 07 | Kaggle free quota; overflow to Vast.ai RTX 3090 spot | Free, ~$0.07–0.09/hr overflow | The 500–2,000-games/cycle cap in Phase 07 was sized to fit inside free GPU quotas — only pay when a cycle genuinely runs long. |
 | Experiment tracking | 02 | Self-hosted MLflow (SQLite backend) | Free | No managed tracking server justified at this scale — run it locally, then on the same free VM as serving. |
 | CI/CD | 06 | GitHub Actions, public repo | Free | Unlimited minutes on GitHub-hosted runners for public repositories — keep the repo public anyway, it's a portfolio piece. |
-| Serving + bot uptime (needs ~24/7) | 04, 05 | Oracle Cloud Always Free ARM VM | Free | 2 OCPU / 12GB RAM (Oracle quietly halved this from 4/24 in June 2026 — still enough for CPU-only ONNX inference), 200GB disk, 10TB/mo egress. The bot only makes outbound calls to Lichess, so no inbound networking is required. |
+| Serving + bot uptime (needs ~24/7) | 04, 05 | Oracle Cloud Always Free ARM VM | Free | 2 OCPU / 12GB RAM (Oracle quietly halved this from 4/24 in June 2026 — still enough for CPU-only PyTorch inference), 200GB disk, 10TB/mo egress. The bot only makes outbound calls to Lichess, so no inbound networking is required. |
 | Async workers (Celery/Redis) | 08 | Same Oracle free VM, via docker-compose | Free | Inference load from a single bot account is small enough that API + bot + Redis + worker share one small VM comfortably. |
 | Observability | 09 | Self-hosted Prometheus/Grafana, same VM | Free | Grafana Cloud's free tier is a fine alternative if you'd rather not self-host the dashboards. |
 | LLM game commentary | 08 | Small hosted model, or local via Ollama | ~$0–2/mo | Recap volume is one call per finished game — negligible at portfolio game counts with a cheap hosted model. A local small model (CPU, same VM) gets this to exactly $0 at the cost of recap quality/latency. |

@@ -31,3 +31,42 @@ jobs:
 
       - name: Test
         run: uv run pytest -v --cov=chessmodel --cov-report=term-missing
+
+  container-integration:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --extra dev --extra training --extra serving
+
+      - name: Generate a dummy checkpoint
+        run: uv run python scripts/make_dummy_checkpoint.py --output /tmp/checkpoints/dummy.pt
+
+      - name: Build the serving image
+        run: docker build -f infra/docker/Dockerfile.serving -t chessmodel-api:ci .
+
+      - name: Run the container
+        run: |
+          docker run -d --name chessmodel-api-ci -p 8000:8000 \
+            -v /tmp/checkpoints:/checkpoints:ro \
+            -e CHECKPOINT_PATH=/checkpoints/dummy.pt \
+            chessmodel-api:ci
+
+      - name: Verify health, schema, and latency budget
+        run: python3 scripts/verify_container.py
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs chessmodel-api-ci
+
+      - name: Clean up
+        if: always()
+        run: docker rm -f chessmodel-api-ci || true
