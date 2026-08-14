@@ -11,9 +11,9 @@ RUN pip install --no-cache-dir uv
 
 WORKDIR /app
 COPY pyproject.toml ./
-RUN uv sync --extra dev --no-install-project
+RUN uv sync --extra dev --extra training --extra serving --no-install-project
 
 COPY . .
-RUN uv sync --extra dev
+RUN uv sync --extra dev --extra training --extra serving
 
 CMD ["uv", "run", "pytest"]

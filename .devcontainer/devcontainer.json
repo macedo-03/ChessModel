@@ -1,7 +1,7 @@
 {
   "name": "chessmodel-dev",
   "image": "mcr.microsoft.com/devcontainers/python:3.11",
-  "postCreateCommand": "pip install uv && uv sync --extra dev && uv run pre-commit install",
+  "postCreateCommand": "pip install uv && uv sync --extra dev --extra training --extra serving && uv run pre-commit install",
   "customizations": {
     "vscode": {
       "extensions": [

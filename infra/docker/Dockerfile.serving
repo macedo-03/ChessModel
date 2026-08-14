@@ -1,0 +1,79 @@
+# Slim inference-only image for the Phase 04 serving API -- see
+# infra/docker/Dockerfile's own comment, which flagged this as coming.
+#
+# No ONNX (see the Phase 04 planning discussion): serves directly from the
+# PyTorch checkpoint. Two things keep this image from turning into the
+# multi-GB mess a naive `uv sync` would produce:
+#
+# 1. Only the `serving` extra is installed, not `training` -- dvc/mlflow/
+#    kaggle and their transitive deps (pandas, scipy, pyarrow, botocore...)
+#    have nothing to do with serving a trained checkpoint.
+# 2. uv.lock pins the default torch build, which bundles the full CUDA
+#    toolchain (nvidia-cublas/-cudnn/-etc, ~2.7GB) even though this image
+#    only ever runs on CPU. `--no-install-package` excludes torch *and* its
+#    CUDA-only dependencies from the frozen sync entirely, rather than
+#    installing them and overriding afterward -- an earlier version of this
+#    Dockerfile did exactly that and left the orphaned CUDA packages sitting
+#    in the image anyway, since `uv pip install --reinstall` swaps the named
+#    package but doesn't clean up dependencies the swap made unnecessary.
+#    The CPU-only wheel is installed fresh, from scratch, instead.
+
+FROM python:3.11-slim AS builder
+
+RUN pip install --no-cache-dir uv
+
+WORKDIR /app
+COPY pyproject.toml uv.lock ./
+RUN uv sync --extra serving --no-install-project --frozen \
+    --no-install-package torch \
+    --no-install-package nvidia-cublas \
+    --no-install-package nvidia-cuda-cupti \
+    --no-install-package nvidia-cuda-nvrtc \
+    --no-install-package nvidia-cuda-runtime \
+    --no-install-package nvidia-cudnn-cu13 \
+    --no-install-package nvidia-cufft \
+    --no-install-package nvidia-cufile \
+    --no-install-package nvidia-curand \
+    --no-install-package nvidia-cusolver \
+    --no-install-package nvidia-cusparse \
+    --no-install-package nvidia-cusparselt-cu13 \
+    --no-install-package nvidia-nccl-cu13 \
+    --no-install-package nvidia-nvjitlink \
+    --no-install-package nvidia-nvshmem-cu13 \
+    --no-install-package nvidia-nvtx \
+    --no-install-package triton
+
+COPY src/ src/
+COPY README.md ./
+RUN uv sync --extra serving --frozen \
+    --no-install-package torch \
+    --no-install-package nvidia-cublas \
+    --no-install-package nvidia-cuda-cupti \
+    --no-install-package nvidia-cuda-nvrtc \
+    --no-install-package nvidia-cuda-runtime \
+    --no-install-package nvidia-cudnn-cu13 \
+    --no-install-package nvidia-cufft \
+    --no-install-package nvidia-cufile \
+    --no-install-package nvidia-curand \
+    --no-install-package nvidia-cusolver \
+    --no-install-package nvidia-cusparse \
+    --no-install-package nvidia-cusparselt-cu13 \
+    --no-install-package nvidia-nccl-cu13 \
+    --no-install-package nvidia-nvjitlink \
+    --no-install-package nvidia-nvshmem-cu13 \
+    --no-install-package nvidia-nvtx \
+    --no-install-package triton
+
+RUN uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+FROM python:3.11-slim AS runtime
+
+RUN useradd --create-home --uid 1000 appuser
+WORKDIR /app
+COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /app/src /app/src
+ENV PATH="/app/.venv/bin:$PATH"
+USER appuser
+
+EXPOSE 8000
+CMD ["uvicorn", "chessmodel.serving.api:app", "--host", "0.0.0.0", "--port", "8000"]

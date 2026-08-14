@@ -1,0 +1,28 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.serving
+    ports:
+      - "8000:8000"
+    environment:
+      CHECKPOINT_PATH: /checkpoints/best.pt
+    volumes:
+      - ./src/chessmodel/training/output/checkpoints:/checkpoints:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Not consumed by anything yet -- present because Phase 04's own spec calls
+  # for it, in anticipation of Phase 05's post-game queue.
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
