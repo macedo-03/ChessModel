@@ -16,6 +16,7 @@ from mlflow.tracking import MlflowClient
 
 from chessmodel.training.model import ChessNet
 from chessmodel.training.train import (
+    REGISTERED_MODEL_NAME,
     TrainingConfig,
     _build_datasets,
     _effective_total_games,
@@ -231,6 +232,10 @@ def test_train_produces_checkpoints_and_mlflow_run(tmp_path: Path) -> None:
     assert len(runs) == 1
     assert "val_loss" in runs[0].data.metrics
     assert "val_policy_top1_accuracy" in runs[0].data.metrics
+
+    versions = client.search_model_versions(f"name='{REGISTERED_MODEL_NAME}'")
+    assert len(versions) == 1
+    assert versions[0].run_id == runs[0].info.run_id
 
 
 def test_resume_from_checkpoint_continues_global_step(tmp_path: Path) -> None:

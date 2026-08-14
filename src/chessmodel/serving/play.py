@@ -144,8 +144,18 @@ def play(checkpoint_path: Path, user_plays_white: bool, device_name: str | None)
                 return
             board.push(move)
         else:
+            mover_is_white = board.turn == chess.WHITE
             move, value = select_model_move(model, board, device)
-            print(f"Model plays: {board.san(move)}  (self-assessed value: {value:+.2f})")
+            # select_model_move's value is mover's-perspective (ADR-0002) -- whoever's
+            # turn it was when the model evaluated the position, not always White.
+            # Flipping it here keeps the printed number consistently readable as
+            # "how well is White doing" across the whole game, regardless of which
+            # side the model is playing.
+            white_perspective_value = value if mover_is_white else -value
+            print(
+                f"Model plays: {board.san(move)}  "
+                f"(white-perspective value: {white_perspective_value:+.2f})"
+            )
             board.push(move)
 
         print(_render_board(board))

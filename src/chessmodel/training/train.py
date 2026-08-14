@@ -15,6 +15,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import mlflow
+import mlflow.pytorch
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -34,6 +35,8 @@ from chessmodel.training.model import (
     DEFAULT_VALUE_HIDDEN,
     ChessNet,
 )
+
+REGISTERED_MODEL_NAME = "chessmodel"
 
 
 @dataclass
@@ -178,6 +181,8 @@ def save_checkpoint(
     config: TrainingConfig,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+
+    config_dict = {k: str(v) if isinstance(v, Path) else v for k, v in asdict(config).items()}
     torch.save(
         {
             "model_state_dict": model.state_dict(),
@@ -186,7 +191,7 @@ def save_checkpoint(
             "epoch": epoch,
             "global_step": global_step,
             "best_val_loss": best_val_loss,
-            "config": asdict(config),
+            "config": config_dict,
         },
         path,
     )
@@ -361,5 +366,18 @@ def train(config: TrainingConfig) -> Path:
                 )
 
         mlflow.log_artifact(str(best_path))
+        # log_artifact alone stores a plain file -- the registry needs a
+        # properly flavor-logged model (MLmodel metadata) to register against,
+        # which is what this call provides. Our own checkpoint format (via
+        # save_checkpoint/load_checkpoint) stays the source of truth for
+        # actually loading a model elsewhere in this codebase; this is purely
+        # to get real Model Registry versioning (Phase 06's promotion gating
+        # will reference it by name/version).
+        mlflow.pytorch.log_model(
+            model,
+            name="model",
+            registered_model_name=REGISTERED_MODEL_NAME,
+            serialization_format="pickle",
+        )
 
     return best_path
