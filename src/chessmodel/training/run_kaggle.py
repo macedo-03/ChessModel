@@ -64,7 +64,7 @@ except ImportError:
             "-m",
             "pip",
             "install",
-            "git+https://github.com/macedo-03/ChessModel.git",
+            "chessmodel[training] @ git+https://github.com/macedo-03/ChessModel.git",
         ]
     )
 
