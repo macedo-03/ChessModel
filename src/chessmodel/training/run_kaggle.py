@@ -57,25 +57,62 @@ KAGGLE_WORKING = Path("/kaggle/working")
 
 
 def resolve_kaggle_dataset_path(dataset_slug: str, dataset_filename: str) -> Path:
+    """The conventional /kaggle/input/<slug>/<file> layout.
+
+    Not the only layout actually observed in practice -- some kernels mount
+    datasets under a deeper /kaggle/input/datasets/<owner>/... path instead.
+    find_dataset_path() below tries this first and falls back to searching
+    when it's wrong, so this function staying "the conventional guess" (and
+    not the search logic itself) is what keeps it simple enough to unit test.
+    """
     return KAGGLE_INPUT / dataset_slug / dataset_filename
 
 
-def _describe_kaggle_input() -> str:
-    """Best-effort directory listing for diagnosing a missing dataset mount.
+def find_dataset_path(dataset_slug: str, dataset_filename: str) -> Path:
+    """Resolve the real path to the attached dataset's PGN, tolerant of which
+    /kaggle/input layout this kernel happens to use.
+
+    Tries the conventional path first; if that's wrong, searches the whole
+    /kaggle/input tree by filename instead of assuming a specific nested
+    structure -- Kaggle's mount layout isn't guaranteed stable across kernel
+    types/infra versions, and guessing wrong here means a wasted GPU-quota
+    run. Raises with a full directory listing if neither approach finds
+    exactly one match, so a failure is diagnosable from the log alone.
+    """
+    conventional = resolve_kaggle_dataset_path(dataset_slug, dataset_filename)
+    if conventional.exists():
+        return conventional
+
+    matches = sorted(KAGGLE_INPUT.rglob(dataset_filename))
+    if len(matches) == 1:
+        return matches[0]
+
+    raise FileNotFoundError(
+        f"Expected dataset file at {conventional}, but it doesn't exist, and "
+        f"searching /kaggle/input for '{dataset_filename}' found "
+        f"{len(matches)} matches (need exactly 1): {matches}\n"
+        f"{_describe_kaggle_input()}"
+    )
+
+
+def _describe_kaggle_input(max_entries: int = 300) -> str:
+    """Full recursive directory listing for diagnosing a missing dataset mount.
 
     A bare FileNotFoundError from deep inside train() doesn't say whether
     /kaggle/input itself is empty, has the dataset under a different slug, or
-    has the file under a different name -- any of which look identical from
-    the caller's side. This surfaces the actual mounted layout so a failed
-    run's log is diagnosable without needing a second run just to add prints.
+    has the file nested under some other layout -- any of which look
+    identical from the caller's side. This surfaces the actual mounted
+    layout so a failed run's log is diagnosable without needing a second run
+    just to add prints.
     """
     if not KAGGLE_INPUT.exists():
         return f"{KAGGLE_INPUT} does not exist"
-    lines = [f"{KAGGLE_INPUT} contains: {sorted(p.name for p in KAGGLE_INPUT.iterdir())}"]
-    for child in sorted(KAGGLE_INPUT.iterdir()):
-        if child.is_dir():
-            lines.append(f"  {child}/ contains: {sorted(p.name for p in child.iterdir())}")
-    return "\n".join(lines)
+    entries = sorted(str(p.relative_to(KAGGLE_INPUT)) for p in KAGGLE_INPUT.rglob("*"))
+    shown = entries[:max_entries]
+    listing = "\n".join(f"  {entry}" for entry in shown)
+    if len(entries) > max_entries:
+        listing += f"\n  ... and {len(entries) - max_entries} more"
+    return f"{KAGGLE_INPUT} contains:\n{listing}"
 
 
 def main() -> None:
@@ -103,12 +140,8 @@ def main() -> None:
     parser.add_argument("--num-residual-blocks", type=int, default=8)
     args = parser.parse_args()
 
-    dataset_path = resolve_kaggle_dataset_path(args.dataset_slug, args.dataset_filename)
-    if not dataset_path.exists():
-        raise FileNotFoundError(
-            f"Expected dataset file at {dataset_path}, but it doesn't exist.\n"
-            f"{_describe_kaggle_input()}"
-        )
+    dataset_path = find_dataset_path(args.dataset_slug, args.dataset_filename)
+    print(f"Resolved dataset path: {dataset_path}")
 
     config = TrainingConfig(
         dataset_path=dataset_path,
