@@ -11,10 +11,10 @@ core:
 - Checkpoints and the MLflow store are written under /kaggle/working/, so
   both get captured as kernel outputs and can be pulled back down afterward
   via `kaggle kernels output <kernel> -p ./pulled`.
-- GPU needs no special handling here at all: train()'s device
-  auto-detection already picks up CUDA when the kernel has GPU enabled (see
-  kernel-metadata.json's "enable_gpu") -- Kaggle just needs to be told to
-  turn the accelerator on, the training code doesn't change.
+- GPU needs no special handling in train() itself: its device auto-detection
+  already picks up CUDA when the kernel has GPU enabled (see
+  kernel-metadata.json's "enable_gpu"). The install step below is a
+  different story -- see the CUDA build note.
 
 One real limitation this doesn't solve: a kernel's filesystem doesn't
 persist between separate runs, so the MLflow sqlite db written under
@@ -27,6 +27,16 @@ This script assumes `chessmodel` isn't already installed in the kernel's
 environment and installs it from GitHub on first import -- which requires
 the repo to be public (or reachable via a Kaggle-configured git credential)
 and the kernel to have internet access enabled.
+
+CUDA build note: Kaggle's base image ships a torch build already matched to
+whatever GPU it hands out (observed: a Tesla P100, compute capability 6.0).
+A plain `pip install` of this package would resolve pyproject.toml's
+`torch>=2.13.0` against the latest PyPI wheel instead, which targets newer
+GPU architectures only and silently breaks older ones -- hit for real as
+`torch.AcceleratorError: CUDA error: no kernel image is available for
+execution on the device`, on the very first conv2d call. Installing a
+CUDA-12.6 build explicitly first (still satisfies >=2.13.0) keeps the
+later chessmodel install from touching it.
 """
 
 from __future__ import annotations
@@ -37,6 +47,17 @@ except ImportError:
     import subprocess
     import sys
 
+    subprocess.check_call(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "torch==2.13.0",
+            "--index-url",
+            "https://download.pytorch.org/whl/cu126",
+        ]
+    )
     subprocess.check_call(
         [
             sys.executable,
