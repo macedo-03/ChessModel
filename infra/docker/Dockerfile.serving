@@ -5,7 +5,7 @@
 # PyTorch checkpoint. Two things keep this image from turning into the
 # multi-GB mess a naive `uv sync` would produce:
 #
-# 1. Only the `serving` extra is installed, not `training` -- dvc/mlflow/
+# 1. Only `model` + `serving` are installed, not `training` -- dvc/mlflow/
 #    kaggle and their transitive deps (pandas, scipy, pyarrow, botocore...)
 #    have nothing to do with serving a trained checkpoint.
 # 2. uv.lock pins the default torch build, which bundles the full CUDA
@@ -24,7 +24,7 @@ RUN pip install --no-cache-dir uv
 
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
-RUN uv sync --extra serving --no-install-project --frozen \
+RUN uv sync --extra model --extra serving --no-install-project --frozen \
     --no-install-package torch \
     --no-install-package nvidia-cublas \
     --no-install-package nvidia-cuda-cupti \
@@ -45,7 +45,7 @@ RUN uv sync --extra serving --no-install-project --frozen \
 
 COPY src/ src/
 COPY README.md ./
-RUN uv sync --extra serving --frozen \
+RUN uv sync --extra model --extra serving --frozen \
     --no-install-package torch \
     --no-install-package nvidia-cublas \
     --no-install-package nvidia-cuda-cupti \

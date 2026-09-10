@@ -122,7 +122,7 @@ budget lives, not self-play.
 
 **Goal:** sub-100ms interpretability attached to the trained net — the project's
 actual differentiator.
-**Estimate:** 1.5–2 weeks · **Tech:** forward hooks, linear probes, integrated gradients
+**Estimate:** 1.5–2 weeks · **Tech:** forward hooks, linear probes, gradient×input
 
 - Forward hooks on residual-block activations
 - Build a labeled concept dataset (king exposure, center control, pawn integrity,
@@ -131,13 +131,18 @@ actual differentiator.
   concept probing, citable in the writeup
 - Log probe accuracy/AUC per concept per layer to MLflow; this becomes the
   concept-drift signal monitored in Phase 9
-- Feature attribution via integrated gradients or SARFA, rendered as a per-square
-  saliency heatmap
+- Feature attribution via gradient×input — a single backward pass — rendered as a
+  per-square saliency heatmap. Integrated gradients was the original choice but
+  does not fit a sub-100ms budget: measured on this project's trained checkpoint,
+  one forward+backward is ~22ms on CPU, so IG's usual 20–50 path steps land at
+  440–1,100ms. Keep IG (or SARFA) for the Phase 08 async path, where nothing is
+  waiting on the result
 - Package everything behind one `explain(board, model) -> ExplanationResult` call
   used by serving and notebooks alike
 
-**Exit criteria:** a notebook demo producing concept scores + saliency heatmap for a
-sample position in under 100ms on CPU.
+**Exit criteria:** a notebook demo producing concept scores + a saliency heatmap for
+a sample position in under 100ms on CPU — reachable with single-backward attribution
+(~25–30ms measured), not with integrated gradients.
 
 ---
 
@@ -225,14 +230,29 @@ continuous-learning loop.
   decisive result to conserve compute
 - On a pass: promote in the MLflow Registry, rebuild the serving image with the
   new checkpoint
-- Self-play generation capped per cycle (e.g. 500–2,000 games), light MCTS or
-  temperature-sampled policy only
+- Self-play generation capped per cycle (e.g. 500–2,000 games) using light MCTS —
+  **not** temperature-sampled policy alone. The visit-count distribution is the
+  whole point: it is a policy *improvement* operator, better than the raw prior,
+  so training toward it strengthens the net. Moves sampled from the policy are
+  drawn from the very distribution being trained, so learning from them is
+  self-distillation with no improvement signal — it can sharpen or collapse the
+  policy, not improve it. Temperature belongs in move *selection* (opening
+  diversity), never in generating the training target
+- Policy target = MCTS visit counts; value target = the game's own outcome
 - Mix self-play data back into training at a controlled ratio (10–20%) alongside
   human games, to avoid distributional collapse
 
 **Exit criteria:** one full cycle — self-play batch → retrain → SPRT arena →
 promotion/rejection — runs automatically and logs an Elo-delta estimate with a
 confidence interval.
+
+**Metric conflict — settle this before the first cycle:** Phase 02 measures human
+move-matching (top-1/top-3 against held-out human games); this phase optimises
+playing strength. They pull in opposite directions — self-play data will *lower*
+move-matching accuracy while raising Elo, so a Phase 02 benchmark regression after a
+cycle is the expected outcome, not a bug. Track both, and gate promotion on the SPRT
+Elo result alone, reporting move-matching alongside as a descriptive statistic
+rather than a target.
 
 **Risk — read this one twice:** this is the phase most likely to blow the compute
 budget. Keep the self-play batch size and MCTS simulation count small and document
@@ -314,6 +334,8 @@ What to cut first if the timeline compresses.
 | Risk | Phase | Severity | Mitigation |
 |---|---|---|---|
 | Self-play compute cost | 07 | High | Cap games/cycle and MCTS depth explicitly; treat as bounded fine-tuning, not AlphaZero-from-scratch. |
+| Move-matching and playing strength as competing objectives | 02, 07 | Medium | Gate promotion on SPRT Elo only; report Phase 02's move-matching accuracy as a descriptive statistic, expected to drop once self-play data enters training. |
+| Self-play that can't improve the policy | 07 | High | Policy target must be MCTS visit counts. Training on policy-sampled moves is self-distillation — no improvement operator, so no strength gain. |
 | Raw PGN dump size | 01 | Medium | Stream-filter by Elo while decompressing; never persist the full uncompressed dump. |
 | Bot account is one-way (BOT upgrade) | 05 | Low | Test on a throwaway account before touching the account you want to keep. |
 | LLM commentary hallucination | 08 | Medium | Ground the prompt in Stockfish ACPL and probe deltas; require the recap to cite specific numbers. |

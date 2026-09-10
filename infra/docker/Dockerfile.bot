@@ -1,0 +1,35 @@
+# Lightweight image for the Lichess bot client -- calls the serving API over
+# HTTP rather than running the model itself, so it needs neither torch nor
+# fastapi. Because torch lives in its own `model` extra (not a base
+# dependency, see pyproject.toml), a plain `uv sync --extra bot` here never
+# even considers installing it -- no exclusion list needed, unlike
+# Dockerfile.serving.
+
+FROM python:3.11-slim AS builder
+
+RUN pip install --no-cache-dir uv
+
+WORKDIR /app
+COPY pyproject.toml uv.lock ./
+RUN uv sync --extra bot --no-install-project --frozen
+
+COPY src/ src/
+COPY README.md ./
+RUN uv sync --extra bot --frozen
+
+FROM python:3.11-slim AS runtime
+
+RUN useradd --create-home --uid 1000 appuser
+WORKDIR /app
+COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /app/src /app/src
+ENV PATH="/app/.venv/bin:$PATH"
+# Python fully buffers stdout when it isn't attached to a real terminal (as
+# in a container), so plain print() calls -- like "Logged in as ..." --
+# silently sit in memory and never reach `docker logs` until the buffer
+# fills or the process exits. Unbuffered output is what makes the bot's
+# logs actually show up in real time.
+ENV PYTHONUNBUFFERED=1
+USER appuser
+
+CMD ["python", "-m", "chessmodel.bot.lichess_bot"]

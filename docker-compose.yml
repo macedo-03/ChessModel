@@ -15,8 +15,8 @@ services:
       timeout: 3s
       retries: 5
 
-  # Not consumed by anything yet -- present because Phase 04's own spec calls
-  # for it, in anticipation of Phase 05's post-game queue.
+  # Post-game queue: the bot pushes finished games here; nothing consumes
+  # them yet until Phase 08's async commentary worker exists.
   redis:
     image: redis:alpine
     ports:
@@ -26,3 +26,18 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+
+  bot:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.bot
+    env_file:
+      - .env # LICHESS_TOKEN -- never committed, see .gitignore
+    environment:
+      CHESSMODEL_API_URL: http://api:8000
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy

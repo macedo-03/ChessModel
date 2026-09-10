@@ -7,10 +7,16 @@ requires-python = ">=3.11"
 dependencies = [
     "python-chess>=1.10",
     "numpy>=1.26",
-    "torch>=2.13.0",
 ]
 
 [project.optional-dependencies]
+# torch is its own extra, not a base dependency -- needed by training and
+# serving (both run the model), but not by the bot client (HTTP calls only).
+# Keeping it out of `dependencies` means the bot image never even considers
+# installing the multi-GB CUDA-bundled wheel, no exclusion list needed.
+model = [
+    "torch>=2.13.0",
+]
 # Data ingestion, training, and the local/Kaggle MLOps tooling -- everything
 # except the serving path itself.
 training = [
@@ -26,6 +32,13 @@ training = [
 serving = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
+]
+# The Lichess bot client -- a separate process that calls the serving API
+# over HTTP rather than running the model itself, so it needs neither torch
+# nor fastapi, just an HTTP client and a Redis client for the post-game hook.
+bot = [
+    "httpx>=0.27",
+    "redis>=5.0",
 ]
 dev = [
     "pytest>=8.0",
