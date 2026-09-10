@@ -18,7 +18,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --extra dev --extra training --extra serving
+        run: uv sync --extra dev --extra model --extra training --extra serving --extra bot
 
       - name: Lint
         run: uv run ruff check .
@@ -45,7 +45,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --extra dev --extra training --extra serving
+        run: uv sync --extra dev --extra model --extra training --extra serving --extra bot
 
       - name: Generate a dummy checkpoint
         run: uv run python scripts/make_dummy_checkpoint.py --output /tmp/checkpoints/dummy.pt
