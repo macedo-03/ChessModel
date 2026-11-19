@@ -236,3 +236,6 @@ mlartifacts/
 .dvc/cache/
 .dvc/tmp/
 wandb/
+
+# macOS Finder metadata
+.DS_Store

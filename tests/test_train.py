@@ -238,6 +238,20 @@ def test_train_produces_checkpoints_and_mlflow_run(tmp_path: Path) -> None:
     assert versions[0].run_id == runs[0].info.run_id
 
 
+def test_latest_checkpoint_records_current_best_val_loss(tmp_path: Path) -> None:
+    # latest.pt must carry the up-to-date best_val_loss, not the previous
+    # epoch's -- resuming from it otherwise compares against a stale
+    # threshold and can overwrite best.pt with a worse model.
+    config = _base_config(tmp_path, num_epochs=1)
+
+    best_path = train(config)
+
+    best = torch.load(best_path, weights_only=False)
+    latest = torch.load(config.checkpoint_dir / "latest.pt", weights_only=False)
+    assert latest["best_val_loss"] == best["best_val_loss"]
+    assert latest["best_val_loss"] != float("inf")
+
+
 def test_resume_from_checkpoint_continues_global_step(tmp_path: Path) -> None:
     config = _base_config(tmp_path, num_epochs=1)
     best_path = train(config)

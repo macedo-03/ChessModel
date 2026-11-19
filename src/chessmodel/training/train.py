@@ -349,11 +349,18 @@ def train(config: TrainingConfig) -> Path:
             mlflow.log_metric("val_loss", val_loss, step=epoch)
             mlflow.log_metric("val_policy_top1_accuracy", val_accuracy, step=epoch)
 
+            # Update best_val_loss before writing either checkpoint. Saving
+            # latest.pt first used to record the previous epoch's best, so
+            # resuming from latest.pt compared against a stale (higher)
+            # threshold and could overwrite best.pt with a worse model.
+            is_new_best = val_loss < best_val_loss
+            if is_new_best:
+                best_val_loss = val_loss
+
             save_checkpoint(
                 latest_path, model, optimizer, scheduler, epoch, global_step, best_val_loss, config
             )
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
+            if is_new_best:
                 save_checkpoint(
                     best_path,
                     model,
