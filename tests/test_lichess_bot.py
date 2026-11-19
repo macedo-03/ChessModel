@@ -100,6 +100,63 @@ def test_advance_game_pushes_finished_game_on_game_over() -> None:
     assert "1. e4 e5" in payload
 
 
+# --- terminal statuses (Phase 05's "resolves every draw condition") -------
+
+# Lichess statuses that mean a real game finished. Game-over detection is
+# delegated to Lichess (see the module docstring), so "resolving draw
+# conditions correctly" concretely means: stop the loop and queue the game,
+# for every one of these -- which is testable without having to engineer a
+# real threefold repetition against a live opponent.
+FINISHED_STATUSES = [
+    "mate",
+    "resign",
+    "stalemate",
+    "draw",
+    "timeout",
+    "outoftime",
+    "cheat",
+    "variantEnd",
+    "unknownFinish",
+]
+
+
+@pytest.mark.parametrize("status", FINISHED_STATUSES)
+def test_advance_game_stops_and_queues_on_every_finished_status(status: str) -> None:
+    clients = _make_clients()
+    clients.lichess.export_pgn.return_value = "1. e4 e5 *"
+    state = {"status": status, "moves": "e2e4", "wtime": 60000, "btime": 60000}
+
+    still_going = advance_game(clients, "g1", chess.WHITE, "startpos", state)
+
+    assert still_going is False
+    clients.lichess.make_move.assert_not_called()
+    clients.redis.lpush.assert_called_once()
+
+
+@pytest.mark.parametrize("status", ["aborted", "noStart"])
+def test_advance_game_does_not_queue_games_that_were_never_played(status: str) -> None:
+    # An aborted game has no moves to analyse -- queueing it would hand
+    # Phase 08 a game with no ACPL and no concept timeline.
+    clients = _make_clients()
+    state = {"status": status, "moves": "", "wtime": 60000, "btime": 60000}
+
+    still_going = advance_game(clients, "g1", chess.WHITE, "startpos", state)
+
+    assert still_going is False
+    clients.redis.lpush.assert_not_called()
+    clients.lichess.export_pgn.assert_not_called()
+
+
+def test_advance_game_treats_created_as_still_in_play() -> None:
+    clients = _make_clients()
+    state = {"status": "created", "moves": "", "wtime": 60000, "btime": 60000}
+
+    still_going = advance_game(clients, "g1", chess.WHITE, "startpos", state)
+
+    assert still_going is True
+    clients.redis.lpush.assert_not_called()
+
+
 # --- play_game (end-to-end against a mocked stream) -----------------------
 
 

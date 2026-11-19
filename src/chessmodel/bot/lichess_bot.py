@@ -32,6 +32,14 @@ import redis
 
 FINISHED_GAMES_QUEUE_KEY = "chessmodel:finished_games"
 
+# Lichess's own status field is authoritative for game-over (see the module
+# docstring), but it splits three ways, not two.
+GAME_IN_PLAY_STATUSES = frozenset({"created", "started"})
+# Ended without ever being played. Queueing these would hand Phase 08 a game
+# with no moves to analyse -- no ACPL, no concept timeline, nothing for a
+# recap to cite -- so they're dropped rather than enqueued.
+GAME_NOT_PLAYED_STATUSES = frozenset({"aborted", "noStart"})
+
 
 class LichessClient:
     def __init__(self, token: str, base_url: str = "https://lichess.org") -> None:
@@ -131,9 +139,15 @@ def advance_game(
 
     "Ended" is whatever Lichess's own status field says -- see the module
     docstring on why we don't try to re-derive game-over conditions here.
+    A game that ended without being played (aborted, noStart) stops the loop
+    but is not queued for Phase 08.
     """
-    if state["status"] != "started":
-        _push_finished_game(clients, game_id)
+    status = state["status"]
+    if status not in GAME_IN_PLAY_STATUSES:
+        if status in GAME_NOT_PLAYED_STATUSES:
+            print(f"Game {game_id}: ended as {status} before being played -- not queued")
+        else:
+            _push_finished_game(clients, game_id)
         return False
 
     board = reconstruct_board(initial_fen, state["moves"])
@@ -181,7 +195,15 @@ def play_game(clients: BotClients, game_id: str) -> None:
     for event in stream:
         if event.get("type") != "gameState":
             continue
-        print(f"Game {game_id}: gameState={event}")
+        # Only the tail of the move list: a gameState carries every move
+        # played so far, so logging it whole is O(n^2) in game length --
+        # 125KB of logs for two games, when it was left verbose to debug
+        # the challenge-accept failures.
+        moves = event.get("moves", "").split()
+        print(
+            f"Game {game_id}: move {len(moves)} "
+            f"last={moves[-1] if moves else '-'} status={event.get('status')}"
+        )
         if not advance_game(clients, game_id, our_color, initial_fen, event):
             break
 
